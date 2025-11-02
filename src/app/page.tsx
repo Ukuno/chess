@@ -1,65 +1,148 @@
-import Image from "next/image";
+'use client';
+
+import { useEffect } from 'react';
+import { useChessGame } from '@/hooks/useChessGame';
+import SimpleChessBoard from '@/components/SimpleChessBoard';
+import GameControls from '@/components/GameControls';
+import { getAIMove } from '@/utils/chessAI';
 
 export default function Home() {
+  const {
+    game,
+    gameState,
+    makeMove,
+    startNewGame,
+    setGameModeAndStartNew,
+    setDifficultyAndRestart,
+    getLegalMoves,
+    isGameOver,
+  } = useChessGame();
+
+  // AI move logic for human vs AI mode
+  useEffect(() => {
+    if (
+      gameState.gameMode === 'human-vs-ai' &&
+      gameState.currentPlayer === 'b' &&
+      !isGameOver
+    ) {
+      const timer = setTimeout(() => {
+        const difficulty = gameState.difficulty || 'medium';
+        const aiMove = getAIMove(game, difficulty);
+        if (aiMove) {
+          makeMove(aiMove);
+        }
+      }, 1000); // 1 second delay for AI move
+
+      return () => clearTimeout(timer);
+    }
+  }, [gameState.currentPlayer, gameState.gameMode, gameState.difficulty, isGameOver, game, makeMove]);
+
+  const handleMove = (move: { from: string; to: string; promotion?: string }) => {
+    return makeMove(move);
+  };
+
+  const isPlayerTurn = gameState.gameMode === 'human-vs-human' || 
+                      (gameState.gameMode === 'human-vs-ai' && gameState.currentPlayer === 'w');
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
+    <div className="min-h-screen bg-gradient-to-br from-blue-900 via-purple-900 to-indigo-900">
+      <div className="container mx-auto px-4 py-8">
+        {/* Header */}
+        <div className="text-center mb-8">
+          <h1 className="text-4xl font-bold text-white mb-2">
+            Chess Game
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+          <p className="text-blue-200">
+            Play against AI or another human player
           </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Game Controls */}
+          <div className="lg:col-span-1">
+            <GameControls
+              gameMode={gameState.gameMode}
+              gameStatus={gameState.status}
+              currentPlayer={gameState.currentPlayer}
+              winner={gameState.winner}
+              onNewGame={startNewGame}
+              onGameModeChange={setGameModeAndStartNew}
+              moveHistory={gameState.moveHistory}
+              difficulty={gameState.difficulty}
+              onDifficultyChange={setDifficultyAndRestart}
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+          </div>
+
+          {/* Chess Board */}
+          <div className="lg:col-span-2">
+            <div className="bg-white rounded-lg shadow-2xl p-6">
+              <div className="mb-4 text-center">
+                <h2 className="text-2xl font-bold text-gray-800 mb-2">
+                  Chess Board
+                </h2>
+                {gameState.gameMode === 'human-vs-ai' && (
+                  <p className="text-gray-600">
+                    You are playing as White
+                  </p>
+                )}
+              </div>
+              
+              <SimpleChessBoard
+                position={gameState.fen}
+                onMove={handleMove}
+                isPlayerTurn={isPlayerTurn}
+                gameMode={gameState.gameMode}
+                currentPlayer={gameState.currentPlayer}
+                getLegalMoves={getLegalMoves}
+              />
+
+              {/* Game Over Message */}
+              {isGameOver && (
+                <div className="mt-6 text-center">
+                  <div className="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded">
+                    <strong>Game Over!</strong>
+                    <br />
+                    {gameState.status === 'checkmate' && (
+                      <span>
+                        {gameState.winner === 'w' ? 'White' : 'Black'} wins by checkmate!
+                      </span>
+                    )}
+                    {gameState.status === 'stalemate' && (
+                      <span>Stalemate - It's a draw!</span>
+                    )}
+                    {gameState.status === 'draw' && (
+                      <span>The game is a draw!</span>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
-      </main>
+
+        {/* Instructions */}
+        <div className="mt-8 bg-white rounded-lg shadow-lg p-6">
+          <h3 className="text-xl font-semibold mb-4">How to Play</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <h4 className="font-semibold text-gray-800 mb-2">Game Modes</h4>
+              <ul className="text-gray-600 space-y-1">
+                <li>• <strong>Human vs Human:</strong> Two players take turns</li>
+                <li>• <strong>Human vs AI:</strong> Play against the computer</li>
+              </ul>
+            </div>
+            <div>
+              <h4 className="font-semibold text-gray-800 mb-2">Controls</h4>
+              <ul className="text-gray-600 space-y-1">
+                <li>• Click on a piece to select it</li>
+                <li>• Click on a destination square to move</li>
+                <li>• Right-click to highlight squares</li>
+                <li>• Use "New Game" to start fresh</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
