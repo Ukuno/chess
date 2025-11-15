@@ -12,6 +12,7 @@ interface GameControlsProps {
   moveHistory: string[];
   difficulty?: Difficulty;
   onDifficultyChange?: (difficulty: Difficulty) => void;
+  onLeaveMultiplayer?: () => void;
 }
 
 export default function GameControls({
@@ -24,6 +25,7 @@ export default function GameControls({
   moveHistory,
   difficulty = 'medium',
   onDifficultyChange,
+  onLeaveMultiplayer,
 }: GameControlsProps) {
   const getStatusMessage = () => {
     if (gameStatus === 'puzzle-solved') {
@@ -167,13 +169,21 @@ export default function GameControls({
       )}
 
       {/* New Game Button */}
-      <div className="text-center">
+      <div className="text-center space-y-2">
         <button
           onClick={onNewGame}
-          className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-6 rounded-lg transition-colors"
+          className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-6 rounded-lg transition-colors"
         >
-          New Game
+          {gameMode === 'multiplayer' ? 'Reset Game' : 'New Game'}
         </button>
+        {gameMode === 'multiplayer' && onLeaveMultiplayer && (
+          <button
+            onClick={onLeaveMultiplayer}
+            className="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-6 rounded-lg transition-colors"
+          >
+            Leave Game
+          </button>
+        )}
       </div>
 
       {/* Move History */}

@@ -5,7 +5,7 @@ import { prisma } from '@/lib/prisma';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { gameId: string } }
+  { params }: { params: Promise<{ gameId: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -17,8 +17,10 @@ export async function GET(
       );
     }
 
+    const { gameId } = await params;
+
     const game = await prisma.game.findUnique({
-      where: { gameId: params.gameId },
+      where: { gameId },
       include: {
         whitePlayer: {
           select: {
@@ -67,7 +69,7 @@ export async function GET(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { gameId: string } }
+  { params }: { params: Promise<{ gameId: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -79,10 +81,11 @@ export async function PUT(
       );
     }
 
-    const { fen, moveHistory, status, winner, currentPlayer } = await request.json();
+    const { gameId } = await params;
+    const { fen, moveHistory, status, winner, currentPlayer, abandoned, blackPlayerId } = await request.json();
 
     const game = await prisma.game.findUnique({
-      where: { gameId: params.gameId },
+      where: { gameId },
     });
 
     if (!game) {
@@ -103,16 +106,29 @@ export async function PUT(
       );
     }
 
+    // If abandoned, mark which player abandoned
+    const updateData: any = {
+      fen,
+      moveHistory: Array.isArray(moveHistory) ? moveHistory : [],
+      status,
+      winner,
+      currentPlayer,
+    };
+
+    if (abandoned) {
+      updateData.status = 'abandoned';
+      updateData.abandonedBy = abandoned; // 'w' or 'b'
+    }
+
+    // If blackPlayerId is explicitly set to null, update it
+    if (blackPlayerId === null) {
+      updateData.blackPlayerId = null;
+    }
+
     // Update the game
     const updatedGame = await prisma.game.update({
-      where: { gameId: params.gameId },
-      data: {
-        fen,
-        moveHistory,
-        status,
-        winner,
-        currentPlayer,
-      },
+      where: { gameId },
+      data: updateData,
     });
 
     return NextResponse.json({ game: updatedGame }, { status: 200 });

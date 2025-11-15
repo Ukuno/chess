@@ -1,16 +1,15 @@
 'use client';
 
 import { useSession } from 'next-auth/react';
-import { useRouter } from 'next/router';
 import { useState, useEffect } from 'react';
 
 interface GameLobbyProps {
   onGameStart: (gameId: string, playerColor: 'w' | 'b') => void;
+  onModeChange?: (mode: 'human-vs-human' | 'human-vs-ai' | 'puzzle') => void;
 }
 
-export default function GameLobby({ onGameStart }: GameLobbyProps) {
+export default function GameLobby({ onGameStart, onModeChange }: GameLobbyProps) {
   const { data: session } = useSession();
-  const router = useRouter();
   const [gameId, setGameId] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
@@ -159,7 +158,7 @@ export default function GameLobby({ onGameStart }: GameLobbyProps) {
             value={gameId}
             onChange={(e) => setGameId(e.target.value)}
             placeholder="Enter Game ID"
-            className="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-black"
             onKeyPress={(e) => {
               if (e.key === 'Enter') {
                 joinGame();
@@ -189,6 +188,31 @@ export default function GameLobby({ onGameStart }: GameLobbyProps) {
         <p>
           Multiplayer mode allows you to play with another user on a different device.
         </p>
+      </div>
+
+      {/* Switch Game Mode Buttons */}
+      <div className="border-t border-gray-200 pt-4 space-y-2">
+        <h4 className="font-semibold text-gray-800 text-sm">Or play a different mode:</h4>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            onClick={() => onModeChange?.('human-vs-human')}
+            className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-3 rounded text-sm transition-colors"
+          >
+            Local Play
+          </button>
+          <button
+            onClick={() => onModeChange?.('human-vs-ai')}
+            className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-3 rounded text-sm transition-colors"
+          >
+            Human vs AI
+          </button>
+          <button
+            onClick={() => onModeChange?.('puzzle')}
+            className="bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-3 rounded text-sm transition-colors col-span-2"
+          >
+            Puzzle Challenge
+          </button>
+        </div>
       </div>
     </div>
   );

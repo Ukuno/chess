@@ -53,6 +53,9 @@ export default function Home() {
     // If multiplayer mode, sync move to server
     if (gameState.gameMode === 'multiplayer' && multiplayerGameId && result) {
       try {
+        // Wait a tick to let game state update
+        await new Promise(resolve => setTimeout(resolve, 0));
+        
         await fetch(`/api/games/${multiplayerGameId}`, {
           method: 'PUT',
           headers: {
@@ -77,32 +80,35 @@ export default function Home() {
 
   const [multiplayerGameId, setMultiplayerGameId] = useState<string | null>(null);
   const [playerColor, setPlayerColor] = useState<'w' | 'b' | null>(null);
+  const [opponentLeftMessage, setOpponentLeftMessage] = useState<string | null>(null);
 
   const handleMultiplayerStart = async (gameId: string, color: 'w' | 'b') => {
     setMultiplayerGameId(gameId);
     setPlayerColor(color);
     setGameModeAndStartNew('multiplayer');
     
-    // Fetch initial game state
-    try {
-      const response = await fetch(`/api/games/${gameId}`);
-      if (response.ok) {
-        const { game: serverGame } = await response.json();
-        if (serverGame) {
-          updateMultiplayerGame(
-            serverGame.fen,
-            serverGame.moveHistory || [],
-            serverGame.status,
-            serverGame.currentPlayer as 'w' | 'b',
-            serverGame.winner as 'w' | 'b' | 'draw' | undefined,
-            serverGame.gameId,
-            color
-          );
+    // Fetch initial game state with a small delay to ensure mode is set
+    setTimeout(async () => {
+      try {
+        const response = await fetch(`/api/games/${gameId}`);
+        if (response.ok) {
+          const { game: serverGame } = await response.json();
+          if (serverGame) {
+            updateMultiplayerGame(
+              serverGame.fen,
+              serverGame.moveHistory || [],
+              serverGame.status,
+              serverGame.currentPlayer as 'w' | 'b',
+              serverGame.winner as 'w' | 'b' | 'draw' | undefined,
+              serverGame.gameId,
+              color
+            );
+          }
         }
+      } catch (error) {
+        console.error('Error fetching initial game state:', error);
       }
-    } catch (error) {
-      console.error('Error fetching initial game state:', error);
-    }
+    }, 100);
   };
 
   // Poll for game updates in multiplayer mode
@@ -114,16 +120,44 @@ export default function Home() {
           if (response.ok) {
             const { game: serverGame } = await response.json();
             if (serverGame) {
-              // Update local game state from server
-              updateMultiplayerGame(
-                serverGame.fen,
-                serverGame.moveHistory || [],
-                serverGame.status,
-                serverGame.currentPlayer as 'w' | 'b',
-                serverGame.winner as 'w' | 'b' | 'draw' | undefined,
-                serverGame.gameId,
-                playerColor || undefined
-              );
+              // Check if the game has been abandoned
+              if (serverGame.status === 'abandoned' && serverGame.abandonedBy !== playerColor) {
+                // The opponent has abandoned - show message and switch to local play
+                setOpponentLeftMessage('Your opponent has left the session. Switching to local play...');
+                setTimeout(() => {
+                  setMultiplayerGameId(null);
+                  setPlayerColor(null);
+                  setGameModeAndStartNew('human-vs-human');
+                  setOpponentLeftMessage(null);
+                }, 3000); // Show message for 3 seconds before switching
+                return;
+              }
+
+              // Check if opponent started a new multiplayer game (blackPlayerId removed or game reset with status 'waiting')
+              if (serverGame.status === 'waiting' && playerColor === 'b' && serverGame.blackPlayerId === null) {
+                // Host (white) started a new game, leaving this one
+                setOpponentLeftMessage('Your opponent started a new game. Switching to local play...');
+                setTimeout(() => {
+                  setMultiplayerGameId(null);
+                  setPlayerColor(null);
+                  setGameModeAndStartNew('human-vs-human');
+                  setOpponentLeftMessage(null);
+                }, 3000);
+                return;
+              }
+
+              // Only update if the FEN has changed (opponent made a move)
+              if (serverGame.fen !== gameState.fen) {
+                updateMultiplayerGame(
+                  serverGame.fen,
+                  serverGame.moveHistory || [],
+                  serverGame.status,
+                  serverGame.currentPlayer as 'w' | 'b',
+                  serverGame.winner as 'w' | 'b' | 'draw' | undefined,
+                  serverGame.gameId,
+                  playerColor || undefined
+                );
+              }
             }
           }
         } catch (error) {
@@ -133,12 +167,90 @@ export default function Home() {
 
       return () => clearInterval(interval);
     }
-  }, [gameState.gameMode, multiplayerGameId, playerColor, updateMultiplayerGame]);
+  }, [gameState.gameMode, multiplayerGameId, playerColor, gameState.fen, updateMultiplayerGame, setGameModeAndStartNew]);
 
   const isPlayerTurn = gameState.gameMode === 'human-vs-human' || 
                       (gameState.gameMode === 'human-vs-ai' && gameState.currentPlayer === 'w') ||
                       gameState.gameMode === 'puzzle' ||
                       (gameState.gameMode === 'multiplayer' && gameState.currentPlayer === playerColor);
+
+  // Clear multiplayer game when switching away from multiplayer mode
+  useEffect(() => {
+    if (gameState.gameMode !== 'multiplayer' && multiplayerGameId) {
+      setMultiplayerGameId(null);
+      setPlayerColor(null);
+      startNewGame();
+    }
+  }, [gameState.gameMode, multiplayerGameId, startNewGame]);
+
+  const handleLeaveMultiplayer = async () => {
+    // Notify server that this player is abandoning the game
+    if (multiplayerGameId && playerColor) {
+      try {
+        await fetch(`/api/games/${multiplayerGameId}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            fen: game.fen(),
+            moveHistory: game.history(),
+            status: 'abandoned',
+            abandoned: playerColor,
+            currentPlayer: game.turn(),
+          }),
+        });
+      } catch (error) {
+        console.error('Error notifying game abandonment:', error);
+      }
+    }
+
+    setMultiplayerGameId(null);
+    setPlayerColor(null);
+    setGameModeAndStartNew('human-vs-human');
+  };
+
+  const handleNewGameInMultiplayer = async () => {
+    // If in multiplayer mode, reset the game within the same session
+    if (gameState.gameMode === 'multiplayer' && multiplayerGameId && playerColor) {
+      try {
+        // Reset the game on the server
+        await fetch(`/api/games/${multiplayerGameId}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+            moveHistory: [],
+            status: 'playing',
+            currentPlayer: 'w',
+            winner: undefined,
+          }),
+        });
+        
+        // Reset local game state
+        startNewGame();
+      } catch (error) {
+        console.error('Error resetting game:', error);
+      }
+    } else {
+      // For other modes, just start a new game
+      startNewGame();
+    }
+  };
+
+  const handleNewMultiplayerGame = async () => {
+    // If in multiplayer mode, reset multiplayer state and return to lobby
+    if (gameState.gameMode === 'multiplayer') {
+      setMultiplayerGameId(null);
+      setPlayerColor(null);
+      // Game mode stays as multiplayer, GameLobby will show
+    } else {
+      // For other modes, just start a new game
+      startNewGame();
+    }
+  };
 
   // Show loading state
   if (status === 'loading') {
@@ -255,24 +367,32 @@ export default function Home() {
                 currentDifficulty={gameState.difficulty}
               />
             ) : gameState.gameMode === 'multiplayer' && !multiplayerGameId ? (
-              <GameLobby onGameStart={handleMultiplayerStart} />
+              <GameLobby onGameStart={handleMultiplayerStart} onModeChange={setGameModeAndStartNew} />
             ) : (
               <GameControls
                 gameMode={gameState.gameMode}
                 gameStatus={gameState.status}
                 currentPlayer={gameState.currentPlayer}
                 winner={gameState.winner}
-                onNewGame={startNewGame}
+                onNewGame={handleNewGameInMultiplayer}
                 onGameModeChange={setGameModeAndStartNew}
                 moveHistory={gameState.moveHistory}
                 difficulty={gameState.difficulty}
                 onDifficultyChange={setDifficultyAndRestart}
+                onLeaveMultiplayer={gameState.gameMode === 'multiplayer' ? handleLeaveMultiplayer : undefined}
               />
             )}
           </div>
 
           {/* Chess Board */}
           <div className="lg:col-span-2">
+            {/* Opponent Left Notification */}
+            {opponentLeftMessage && (
+              <div className="mb-4 bg-orange-100 border border-orange-400 text-orange-700 px-4 py-3 rounded">
+                <strong>⚠️ Notice:</strong> {opponentLeftMessage}
+              </div>
+            )}
+            
             <div className="bg-white rounded-lg shadow-2xl p-6">
               <div className="mb-4 text-center">
                 <h2 className="text-2xl font-bold text-gray-800 mb-2">

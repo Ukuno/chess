@@ -137,20 +137,17 @@ export const useChessGame = () => {
 
   const setGameModeAndStartNew = useCallback((mode: GameMode) => {
     setGameMode(mode);
-    // Don't reset game for multiplayer mode - it will be set from server
-    if (mode !== 'multiplayer') {
-      const newGame = new Chess();
-      setGame(newGame);
-      setGameState({
-        fen: newGame.fen(),
-        gameMode: mode,
-        status: 'playing',
-        currentPlayer: 'w',
-        moveHistory: [],
-        difficulty,
-      });
-      localStorage.removeItem(STORAGE_KEY);
-    }
+    const newGame = new Chess();
+    setGame(newGame);
+    setGameState({
+      fen: newGame.fen(),
+      gameMode: mode,
+      status: 'playing',
+      currentPlayer: 'w',
+      moveHistory: [],
+      difficulty,
+    });
+    localStorage.removeItem(STORAGE_KEY);
   }, [difficulty]);
 
   const setDifficultyAndRestart = useCallback((newDifficulty: Difficulty) => {
@@ -195,7 +192,7 @@ export const useChessGame = () => {
   }, []);
 
   const getLegalMoves = useCallback((square: string) => {
-    return game.moves({ square, verbose: true });
+    return game.moves({ square: square as any, verbose: true });
   }, [game]);
 
   const updateMultiplayerGame = useCallback((fen: string, moveHistory: string[], status: string, currentPlayer: 'w' | 'b', winner?: 'w' | 'b' | 'draw', gameId?: string, playerColor?: 'w' | 'b') => {
@@ -208,6 +205,7 @@ export const useChessGame = () => {
     setGameState(prev => ({
       ...prev,
       fen,
+      gameMode: 'multiplayer',
       status: gameStatus,
       currentPlayer,
       winner,

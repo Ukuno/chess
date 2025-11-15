@@ -24,6 +24,9 @@ export async function POST(request: NextRequest) {
         gameId,
         whitePlayerId: session.user.id,
         status: 'waiting',
+        fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+        currentPlayer: 'w',
+        moveHistory: [],
       },
     });
 

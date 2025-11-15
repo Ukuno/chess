@@ -5,7 +5,7 @@ import { ChessMove } from '@/types/chess';
 
 interface SimpleChessBoardProps {
   position: string;
-  onMove: (move: ChessMove) => void;
+  onMove: (move: ChessMove) => boolean | undefined | Promise<boolean>;
   isPlayerTurn: boolean;
   gameMode: 'human-vs-human' | 'human-vs-ai' | 'puzzle' | 'multiplayer';
   currentPlayer: 'w' | 'b';
@@ -114,34 +114,43 @@ export default function SimpleChessBoard({
       };
 
       console.log('Attempting move:', move);
-      const success = onMove(move);
-      console.log('Move success:', success);
+      const result = onMove(move);
       
-      if (success) {
-        setSelectedSquare(null);
-        setValidMoves([]);
-      } else {
-        // If move failed, select new piece if it's a valid piece of the current player
-        if (piece) {
-          const isWhitePiece = piece === piece.toUpperCase();
-          const isCurrentPlayerPiece = (currentPlayer === 'w' && isWhitePiece) || (currentPlayer === 'b' && !isWhitePiece);
-          
-          if (isCurrentPlayerPiece) {
-            setSelectedSquare(squareName);
-            // Calculate valid moves for the newly selected piece
-            if (getLegalMoves) {
-              const moves = getLegalMoves(squareName);
-              const validSquares = moves.map(move => move.to);
-              setValidMoves(validSquares);
+      // Handle both sync and async returns
+      const handleMoveResult = (success: boolean | undefined) => {
+        if (success) {
+          setSelectedSquare(null);
+          setValidMoves([]);
+        } else {
+          // If move failed, select new piece if it's a valid piece of the current player
+          if (piece) {
+            const isWhitePiece = piece === piece.toUpperCase();
+            const isCurrentPlayerPiece = (currentPlayer === 'w' && isWhitePiece) || (currentPlayer === 'b' && !isWhitePiece);
+            
+            if (isCurrentPlayerPiece) {
+              setSelectedSquare(squareName);
+              // Calculate valid moves for the newly selected piece
+              if (getLegalMoves) {
+                const moves = getLegalMoves(squareName);
+                const validSquares = moves.map(move => move.to);
+                setValidMoves(validSquares);
+              }
+            } else {
+              setSelectedSquare(null);
+              setValidMoves([]);
             }
           } else {
             setSelectedSquare(null);
             setValidMoves([]);
           }
-        } else {
-          setSelectedSquare(null);
-          setValidMoves([]);
         }
+      };
+
+      if (result instanceof Promise) {
+        result.then(handleMoveResult);
+      } else {
+        console.log('Move success:', result);
+        handleMoveResult(result);
       }
     }
   }, [selectedSquare, onMove, isPlayerTurn, board, getLegalMoves, currentPlayer]);

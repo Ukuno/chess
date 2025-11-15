@@ -76,10 +76,11 @@ model Game {
   whitePlayer   User?    @relation("WhiteGames", fields: [whitePlayerId], references: [id], onDelete: Cascade)
   blackPlayer   User?    @relation("BlackGames", fields: [blackPlayerId], references: [id], onDelete: Cascade)
   fen           String   @default("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
-  status        String   @default("waiting") // waiting, playing, finished
+  status        String   @default("waiting") // waiting, playing, finished, abandoned
   winner        String?  // w, b, or draw
   currentPlayer String   @default("w") // w or b
   moveHistory   String[] @default([])
+  abandonedBy   String?  // Player who abandoned (w for white, b for black)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }
