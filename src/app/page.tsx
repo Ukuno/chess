@@ -1,12 +1,19 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { useSession } from 'next-auth/react';
+import Link from 'next/link';
 import { useChessGame } from '@/hooks/useChessGame';
 import SimpleChessBoard from '@/components/SimpleChessBoard';
 import GameControls from '@/components/GameControls';
+import PuzzleSelector from '@/components/PuzzleSelector';
+import GameLobby from '@/components/GameLobby';
+import AuthButton from '@/components/AuthButton';
 import { getAIMove } from '@/utils/chessAI';
+import { getRandomPuzzle } from '@/data/chessPuzzles';
 
 export default function Home() {
+  const { data: session, status } = useSession();
   const {
     game,
     gameState,
@@ -14,6 +21,9 @@ export default function Home() {
     startNewGame,
     setGameModeAndStartNew,
     setDifficultyAndRestart,
+    startPuzzle,
+    nextPuzzle,
+    updateMultiplayerGame,
     getLegalMoves,
     isGameOver,
   } = useChessGame();
@@ -37,40 +47,228 @@ export default function Home() {
     }
   }, [gameState.currentPlayer, gameState.gameMode, gameState.difficulty, isGameOver, game, makeMove]);
 
-  const handleMove = (move: { from: string; to: string; promotion?: string }) => {
-    return makeMove(move);
+  const handleMove = async (move: { from: string; to: string; promotion?: string }) => {
+    const result = makeMove(move);
+    
+    // If multiplayer mode, sync move to server
+    if (gameState.gameMode === 'multiplayer' && multiplayerGameId && result) {
+      try {
+        await fetch(`/api/games/${multiplayerGameId}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            fen: game.fen(),
+            moveHistory: game.history(),
+            status: game.isGameOver() ? 'finished' : 'playing',
+            winner: game.isCheckmate() ? (game.turn() === 'w' ? 'b' : 'w') : 
+                   game.isDraw() ? 'draw' : undefined,
+            currentPlayer: game.turn(),
+          }),
+        });
+      } catch (error) {
+        console.error('Error syncing move to server:', error);
+      }
+    }
+    
+    return result;
   };
 
-  const isPlayerTurn = gameState.gameMode === 'human-vs-human' || 
-                      (gameState.gameMode === 'human-vs-ai' && gameState.currentPlayer === 'w');
+  const [multiplayerGameId, setMultiplayerGameId] = useState<string | null>(null);
+  const [playerColor, setPlayerColor] = useState<'w' | 'b' | null>(null);
 
+  const handleMultiplayerStart = async (gameId: string, color: 'w' | 'b') => {
+    setMultiplayerGameId(gameId);
+    setPlayerColor(color);
+    setGameModeAndStartNew('multiplayer');
+    
+    // Fetch initial game state
+    try {
+      const response = await fetch(`/api/games/${gameId}`);
+      if (response.ok) {
+        const { game: serverGame } = await response.json();
+        if (serverGame) {
+          updateMultiplayerGame(
+            serverGame.fen,
+            serverGame.moveHistory || [],
+            serverGame.status,
+            serverGame.currentPlayer as 'w' | 'b',
+            serverGame.winner as 'w' | 'b' | 'draw' | undefined,
+            serverGame.gameId,
+            color
+          );
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching initial game state:', error);
+    }
+  };
+
+  // Poll for game updates in multiplayer mode
+  useEffect(() => {
+    if (gameState.gameMode === 'multiplayer' && multiplayerGameId) {
+      const interval = setInterval(async () => {
+        try {
+          const response = await fetch(`/api/games/${multiplayerGameId}`);
+          if (response.ok) {
+            const { game: serverGame } = await response.json();
+            if (serverGame) {
+              // Update local game state from server
+              updateMultiplayerGame(
+                serverGame.fen,
+                serverGame.moveHistory || [],
+                serverGame.status,
+                serverGame.currentPlayer as 'w' | 'b',
+                serverGame.winner as 'w' | 'b' | 'draw' | undefined,
+                serverGame.gameId,
+                playerColor || undefined
+              );
+            }
+          }
+        } catch (error) {
+          console.error('Error fetching game state:', error);
+        }
+      }, 2000); // Poll every 2 seconds
+
+      return () => clearInterval(interval);
+    }
+  }, [gameState.gameMode, multiplayerGameId, playerColor, updateMultiplayerGame]);
+
+  const isPlayerTurn = gameState.gameMode === 'human-vs-human' || 
+                      (gameState.gameMode === 'human-vs-ai' && gameState.currentPlayer === 'w') ||
+                      gameState.gameMode === 'puzzle' ||
+                      (gameState.gameMode === 'multiplayer' && gameState.currentPlayer === playerColor);
+
+  // Show loading state
+  if (status === 'loading') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-900 via-purple-900 to-indigo-900 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
+          <p className="text-white text-lg">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show login prompt if not authenticated
+  if (status === 'unauthenticated' || !session) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-900 via-purple-900 to-indigo-900">
+        <div className="container mx-auto px-4 py-8">
+          {/* Header */}
+          <div className="text-center mb-8">
+            <div className="flex justify-between items-center mb-4">
+              <div className="flex-1"></div>
+              <div className="flex-1 text-center">
+                <h1 className="text-4xl font-bold text-white mb-2">
+                  Chess Game
+                </h1>
+                <p className="text-blue-200">
+                  Play against AI or another human player
+                </p>
+              </div>
+              <div className="flex-1 flex justify-end">
+                <AuthButton />
+              </div>
+            </div>
+          </div>
+
+          {/* Login Prompt */}
+          <div className="max-w-2xl mx-auto mt-16">
+            <div className="bg-white rounded-lg shadow-2xl p-8 text-center">
+              <div className="mb-6">
+                <h2 className="text-3xl font-bold text-gray-800 mb-4">
+                  Welcome to Chess Game
+                </h2>
+                <p className="text-gray-600 text-lg mb-6">
+                  Please sign in to play chess, solve puzzles, and track your progress.
+                </p>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                <Link
+                  href="/auth/login"
+                  className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-8 rounded-lg transition-colors text-lg"
+                >
+                  Sign In
+                </Link>
+                <Link
+                  href="/auth/signup"
+                  className="bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-8 rounded-lg transition-colors text-lg"
+                >
+                  Create Account
+                </Link>
+              </div>
+              <div className="mt-8 pt-6 border-t border-gray-200">
+                <h3 className="text-xl font-semibold text-gray-800 mb-4">Features</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-left">
+                  <div className="p-4 bg-gray-50 rounded-lg">
+                    <h4 className="font-semibold text-gray-800 mb-2">🎮 Play Chess</h4>
+                    <p className="text-sm text-gray-600">Play against AI or another player</p>
+                  </div>
+                  <div className="p-4 bg-gray-50 rounded-lg">
+                    <h4 className="font-semibold text-gray-800 mb-2">🧩 Solve Puzzles</h4>
+                    <p className="text-sm text-gray-600">Challenge yourself with chess puzzles</p>
+                  </div>
+                  <div className="p-4 bg-gray-50 rounded-lg">
+                    <h4 className="font-semibold text-gray-800 mb-2">📊 Track Stats</h4>
+                    <p className="text-sm text-gray-600">Monitor your progress and achievements</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show game for authenticated users
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-900 via-purple-900 to-indigo-900">
       <div className="container mx-auto px-4 py-8">
         {/* Header */}
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-white mb-2">
-            Chess Game
-          </h1>
-          <p className="text-blue-200">
-            Play against AI or another human player
-          </p>
+          <div className="flex justify-between items-center mb-4">
+            <div className="flex-1"></div>
+            <div className="flex-1 text-center">
+              <h1 className="text-4xl font-bold text-white mb-2">
+                Chess Game
+              </h1>
+              <p className="text-blue-200">
+                Play against AI or another human player
+              </p>
+            </div>
+            <div className="flex-1 flex justify-end">
+              <AuthButton />
+            </div>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Game Controls */}
+          {/* Game Controls / Puzzle Selector / Game Lobby */}
           <div className="lg:col-span-1">
-            <GameControls
-              gameMode={gameState.gameMode}
-              gameStatus={gameState.status}
-              currentPlayer={gameState.currentPlayer}
-              winner={gameState.winner}
-              onNewGame={startNewGame}
-              onGameModeChange={setGameModeAndStartNew}
-              moveHistory={gameState.moveHistory}
-              difficulty={gameState.difficulty}
-              onDifficultyChange={setDifficultyAndRestart}
-            />
+            {gameState.gameMode === 'puzzle' && !gameState.currentPuzzle ? (
+              <PuzzleSelector
+                onPuzzleSelect={startPuzzle}
+                currentDifficulty={gameState.difficulty}
+              />
+            ) : gameState.gameMode === 'multiplayer' && !multiplayerGameId ? (
+              <GameLobby onGameStart={handleMultiplayerStart} />
+            ) : (
+              <GameControls
+                gameMode={gameState.gameMode}
+                gameStatus={gameState.status}
+                currentPlayer={gameState.currentPlayer}
+                winner={gameState.winner}
+                onNewGame={startNewGame}
+                onGameModeChange={setGameModeAndStartNew}
+                moveHistory={gameState.moveHistory}
+                difficulty={gameState.difficulty}
+                onDifficultyChange={setDifficultyAndRestart}
+              />
+            )}
           </div>
 
           {/* Chess Board */}
@@ -85,6 +283,26 @@ export default function Home() {
                     You are playing as White
                   </p>
                 )}
+                {gameState.gameMode === 'multiplayer' && playerColor && (
+                  <p className="text-gray-600">
+                    You are playing as {playerColor === 'w' ? 'White' : 'Black'}
+                    {multiplayerGameId && (
+                      <span className="ml-2 text-sm">Game ID: {multiplayerGameId}</span>
+                    )}
+                  </p>
+                )}
+                {gameState.gameMode === 'puzzle' && gameState.currentPuzzle && (
+                  <div className="mt-2">
+                    <p className="text-gray-700 font-semibold">
+                      {gameState.currentPuzzle.description}
+                    </p>
+                    {gameState.currentPuzzle.hint && gameState.status === 'puzzle-failed' && (
+                      <p className="text-sm text-gray-500 mt-1">
+                        💡 Hint: {gameState.currentPuzzle.hint}
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
               
               <SimpleChessBoard
@@ -96,8 +314,60 @@ export default function Home() {
                 getLegalMoves={getLegalMoves}
               />
 
+              {/* Puzzle Solved / Failed Message */}
+              {gameState.gameMode === 'puzzle' && (
+                <div className="mt-6 text-center space-y-3">
+                  {gameState.status === 'puzzle-solved' && (
+                    <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded">
+                      <strong>🎉 Congratulations!</strong>
+                      <br />
+                      <span>You solved the puzzle!</span>
+                      <div className="mt-3">
+                        <button
+                          onClick={() => {
+                            const puzzle = getRandomPuzzle(gameState.currentPuzzle?.difficulty);
+                            startPuzzle(puzzle);
+                          }}
+                          className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded transition-colors"
+                        >
+                          Next Puzzle
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {gameState.status === 'puzzle-failed' && (
+                    <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+                      <strong>❌ Wrong Move!</strong>
+                      <br />
+                      <span>Try again or select a new puzzle.</span>
+                      <div className="mt-3 space-x-2">
+                        <button
+                          onClick={() => {
+                            if (gameState.currentPuzzle) {
+                              startPuzzle(gameState.currentPuzzle);
+                            }
+                          }}
+                          className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded transition-colors"
+                        >
+                          Retry Puzzle
+                        </button>
+                        <button
+                          onClick={() => {
+                            const puzzle = getRandomPuzzle(gameState.currentPuzzle?.difficulty);
+                            startPuzzle(puzzle);
+                          }}
+                          className="bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded transition-colors"
+                        >
+                          New Puzzle
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Game Over Message */}
-              {isGameOver && (
+              {isGameOver && gameState.gameMode !== 'puzzle' && (
                 <div className="mt-6 text-center">
                   <div className="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded">
                     <strong>Game Over!</strong>
@@ -127,8 +397,10 @@ export default function Home() {
             <div>
               <h4 className="font-semibold text-gray-800 mb-2">Game Modes</h4>
               <ul className="text-gray-600 space-y-1">
-                <li>• <strong>Human vs Human:</strong> Two players take turns</li>
+                <li>• <strong>Local Play:</strong> Two players on the same device take turns</li>
+                <li>• <strong>Multiplayer:</strong> Play with another user on a different device</li>
                 <li>• <strong>Human vs AI:</strong> Play against the computer</li>
+                <li>• <strong>Puzzle Challenge:</strong> Solve chess puzzles to improve your skills</li>
               </ul>
             </div>
             <div>

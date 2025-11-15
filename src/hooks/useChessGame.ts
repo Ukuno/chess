@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Chess } from 'chess.js';
-import { GameState, GameMode, ChessMove, Difficulty } from '@/types/chess';
+import { GameState, GameMode, ChessMove, Difficulty, ChessPuzzle } from '@/types/chess';
 
 const STORAGE_KEY = 'chess-game-state';
 
@@ -63,7 +63,41 @@ export const useChessGame = () => {
 
   const makeMove = useCallback((move: ChessMove) => {
     try {
-      // Use the move object directly with chess.js
+      // In puzzle mode, check if the move matches the solution
+      if (gameMode === 'puzzle' && gameState.currentPuzzle) {
+        const moveUCI = `${move.from}${move.to}${move.promotion || ''}`;
+        const solution = gameState.currentPuzzle.solution;
+        
+        // Check if move matches solution
+        if (moveUCI === solution || moveUCI === solution.substring(0, 4)) {
+          // Correct move!
+          const result = game.move({
+            from: move.from,
+            to: move.to,
+            promotion: move.promotion
+          });
+          if (result) {
+            setGameState(prev => ({
+              ...prev,
+              fen: game.fen(),
+              status: 'puzzle-solved',
+              puzzleSolved: true,
+              moveHistory: game.history(),
+            }));
+            return true;
+          }
+        } else {
+          // Wrong move
+          setGameState(prev => ({
+            ...prev,
+            status: 'puzzle-failed',
+            puzzleSolved: false,
+          }));
+          return false;
+        }
+      }
+      
+      // Normal game mode
       const result = game.move({
         from: move.from,
         to: move.to,
@@ -76,9 +110,16 @@ export const useChessGame = () => {
       return false;
     } catch (error) {
       // console.error('Invalid move:', error);
+      if (gameMode === 'puzzle') {
+        setGameState(prev => ({
+          ...prev,
+          status: 'puzzle-failed',
+          puzzleSolved: false,
+        }));
+      }
       return false;
     }
-  }, [game, updateGameState]);
+  }, [game, updateGameState, gameMode, gameState.currentPuzzle]);
 
   const startNewGame = useCallback(() => {
     const newGame = new Chess();
@@ -96,17 +137,20 @@ export const useChessGame = () => {
 
   const setGameModeAndStartNew = useCallback((mode: GameMode) => {
     setGameMode(mode);
-    const newGame = new Chess();
-    setGame(newGame);
-    setGameState({
-      fen: newGame.fen(),
-      gameMode: mode,
-      status: 'playing',
-      currentPlayer: 'w',
-      moveHistory: [],
-      difficulty,
-    });
-    localStorage.removeItem(STORAGE_KEY);
+    // Don't reset game for multiplayer mode - it will be set from server
+    if (mode !== 'multiplayer') {
+      const newGame = new Chess();
+      setGame(newGame);
+      setGameState({
+        fen: newGame.fen(),
+        gameMode: mode,
+        status: 'playing',
+        currentPlayer: 'w',
+        moveHistory: [],
+        difficulty,
+      });
+      localStorage.removeItem(STORAGE_KEY);
+    }
   }, [difficulty]);
 
   const setDifficultyAndRestart = useCallback((newDifficulty: Difficulty) => {
@@ -124,11 +168,58 @@ export const useChessGame = () => {
     localStorage.removeItem(STORAGE_KEY);
   }, [gameMode]);
 
+  const startPuzzle = useCallback((puzzle: ChessPuzzle) => {
+    setGameMode('puzzle');
+    const puzzleGame = new Chess(puzzle.fen);
+    setGame(puzzleGame);
+    setGameState({
+      fen: puzzle.fen,
+      gameMode: 'puzzle',
+      status: 'playing',
+      currentPlayer: puzzle.fen.split(' ')[1] === 'w' ? 'w' : 'b',
+      moveHistory: [],
+      currentPuzzle: puzzle,
+      puzzleSolved: false,
+    });
+    localStorage.removeItem(STORAGE_KEY);
+  }, []);
+
+  const nextPuzzle = useCallback((difficulty?: Difficulty) => {
+    // This will be called from the component with a new puzzle
+    // For now, just reset the puzzle state
+    setGameState(prev => ({
+      ...prev,
+      status: 'playing',
+      puzzleSolved: false,
+    }));
+  }, []);
+
   const getLegalMoves = useCallback((square: string) => {
     return game.moves({ square, verbose: true });
   }, [game]);
 
-  const isGameOver = gameState.status !== 'playing';
+  const updateMultiplayerGame = useCallback((fen: string, moveHistory: string[], status: string, currentPlayer: 'w' | 'b', winner?: 'w' | 'b' | 'draw', gameId?: string, playerColor?: 'w' | 'b') => {
+    const chess = new Chess(fen);
+    setGame(chess);
+    
+    const gameStatus = status === 'playing' ? 'playing' : 
+                      status === 'finished' ? (winner === 'w' ? 'checkmate' : winner === 'b' ? 'checkmate' : 'draw') : 'playing';
+    
+    setGameState(prev => ({
+      ...prev,
+      fen,
+      status: gameStatus,
+      currentPlayer,
+      winner,
+      moveHistory: moveHistory || [],
+      multiplayerGameId: gameId,
+      playerColor,
+    }));
+  }, []);
+
+  const isGameOver = gameState.status !== 'playing' && 
+                     gameState.status !== 'puzzle-solved' && 
+                     gameState.status !== 'puzzle-failed';
 
   return {
     game,
@@ -137,6 +228,9 @@ export const useChessGame = () => {
     startNewGame,
     setGameModeAndStartNew,
     setDifficultyAndRestart,
+    startPuzzle,
+    nextPuzzle,
+    updateMultiplayerGame,
     getLegalMoves,
     isGameOver,
   };

@@ -26,6 +26,12 @@ export default function GameControls({
   onDifficultyChange,
 }: GameControlsProps) {
   const getStatusMessage = () => {
+    if (gameStatus === 'puzzle-solved') {
+      return '🎉 Puzzle Solved!';
+    }
+    if (gameStatus === 'puzzle-failed') {
+      return '❌ Wrong Move! Try again.';
+    }
     if (gameStatus === 'checkmate') {
       return winner === 'w' ? 'White wins by checkmate!' : 'Black wins by checkmate!';
     }
@@ -35,10 +41,19 @@ export default function GameControls({
     if (gameStatus === 'draw') {
       return 'Draw!';
     }
+    if (gameMode === 'puzzle') {
+      return 'Find the best move!';
+    }
     return currentPlayer === 'w' ? "White's turn" : "Black's turn";
   };
 
   const getStatusColor = () => {
+    if (gameStatus === 'puzzle-solved') {
+      return 'text-green-600 font-bold';
+    }
+    if (gameStatus === 'puzzle-failed') {
+      return 'text-red-600 font-bold';
+    }
     if (gameStatus !== 'playing') {
       return 'text-green-600 font-bold';
     }
@@ -58,26 +73,46 @@ export default function GameControls({
       {/* Game Mode Selection */}
       <div className="space-y-2">
         <h3 className="font-semibold text-black">Game Mode</h3>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button
             onClick={() => onGameModeChange('human-vs-human')}
-            className={`px-4 py-2 rounded ${
+            className={`px-4 py-2 rounded text-sm ${
               gameMode === 'human-vs-human'
                 ? 'bg-blue-500 text-white'
                 : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
             }`}
           >
-            Human vs Human
+            Local Play
+          </button>
+          <button
+            onClick={() => onGameModeChange('multiplayer')}
+            className={`px-4 py-2 rounded text-sm ${
+              gameMode === 'multiplayer'
+                ? 'bg-indigo-500 text-white'
+                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+            }`}
+          >
+            Multiplayer
           </button>
           <button
             onClick={() => onGameModeChange('human-vs-ai')}
-            className={`px-4 py-2 rounded ${
+            className={`px-4 py-2 rounded text-sm ${
               gameMode === 'human-vs-ai'
                 ? 'bg-blue-500 text-white'
                 : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
             }`}
           >
             Human vs AI
+          </button>
+          <button
+            onClick={() => onGameModeChange('puzzle')}
+            className={`px-4 py-2 rounded text-sm ${
+              gameMode === 'puzzle'
+                ? 'bg-purple-500 text-white'
+                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+            }`}
+          >
+            Puzzle Challenge
           </button>
         </div>
       </div>

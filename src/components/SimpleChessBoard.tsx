@@ -7,7 +7,7 @@ interface SimpleChessBoardProps {
   position: string;
   onMove: (move: ChessMove) => void;
   isPlayerTurn: boolean;
-  gameMode: 'human-vs-human' | 'human-vs-ai';
+  gameMode: 'human-vs-human' | 'human-vs-ai' | 'puzzle' | 'multiplayer';
   currentPlayer: 'w' | 'b';
   getLegalMoves?: (square: string) => any[];
 }
