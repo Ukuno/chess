@@ -1,35 +1,41 @@
 'use client';
 
 import { useState } from 'react';
-import { signIn } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import PasswordInput from '@/components/PasswordInput';
 
-export default function LoginPage() {
+export default function ForgotPasswordPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const router = useRouter();
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setError('');
+    setSuccess('');
 
     try {
-      const result = await signIn('credentials', {
-        email,
-        password,
-        redirect: false,
+      const response = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email }),
       });
 
-      if (result?.error) {
-        setError('Invalid email or password');
+      const result = await response.json();
+
+      if (!response.ok) {
+        setError(result.error || 'An error occurred');
       } else {
-        router.push('/');
-        router.refresh();
+        setSuccess(result.message || 'If an account with that email exists, a reset code has been sent.');
+        // Redirect to reset password page after a short delay
+        setTimeout(() => {
+          router.push(`/auth/reset-password?email=${encodeURIComponent(email)}`);
+        }, 2000);
       }
     } catch (error) {
       setError('An error occurred. Please try again.');
@@ -43,16 +49,10 @@ export default function LoginPage() {
       <div className="max-w-md w-full space-y-8 bg-white rounded-lg shadow-2xl p-8">
         <div>
           <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            Sign in to Chess Game
+            Forgot your password?
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600">
-            Or{' '}
-            <Link
-              href="/auth/signup"
-              className="font-medium text-purple-600 hover:text-purple-500"
-            >
-              create a new account
-            </Link>
+            Enter your email address and we'll send you a reset code.
           </p>
         </div>
         <form className="mt-8 space-y-6" onSubmit={onSubmit}>
@@ -61,7 +61,12 @@ export default function LoginPage() {
               {error}
             </div>
           )}
-          <div className="rounded-md shadow-sm -space-y-px">
+          {success && (
+            <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded">
+              {success}
+            </div>
+          )}
+          <div className="rounded-md shadow-sm">
             <div>
               <label htmlFor="email" className="sr-only">
                 Email address
@@ -74,35 +79,9 @@ export default function LoginPage() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-purple-500 focus:border-purple-500 focus:z-10 sm:text-sm"
+                className="appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-purple-500 focus:border-purple-500 focus:z-10 sm:text-sm"
                 placeholder="Email address"
               />
-            </div>
-            <div>
-              <label htmlFor="password" className="sr-only">
-                Password
-              </label>
-              <PasswordInput
-                id="password"
-                name="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete="current-password"
-                required
-                placeholder="Password"
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-purple-500 focus:border-purple-500 focus:z-10 sm:text-sm"
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div className="text-sm">
-              <Link
-                href="/auth/forgot-password"
-                className="font-medium text-purple-600 hover:text-purple-500"
-              >
-                Forgot your password?
-              </Link>
             </div>
           </div>
 
@@ -112,8 +91,17 @@ export default function LoginPage() {
               disabled={isLoading}
               className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isLoading ? 'Signing in...' : 'Sign in'}
+              {isLoading ? 'Sending code...' : 'Send reset code'}
             </button>
+          </div>
+
+          <div className="text-center">
+            <Link
+              href="/auth/login"
+              className="font-medium text-purple-600 hover:text-purple-500"
+            >
+              Back to login
+            </Link>
           </div>
         </form>
       </div>

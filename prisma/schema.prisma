@@ -55,6 +55,18 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
+model PasswordReset {
+  id        String   @id @default(cuid())
+  email     String
+  code      String   @unique
+  expires   DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([email])
+  @@index([code])
+}
+
 model GameStats {
   id              String   @id @default(cuid())
   userId          String   @unique

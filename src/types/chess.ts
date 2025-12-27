@@ -12,6 +12,7 @@ export interface ChessPuzzle {
   difficulty: Difficulty;
 }
 
+
 export interface GameState {
   fen: string;
   gameMode: GameMode;
