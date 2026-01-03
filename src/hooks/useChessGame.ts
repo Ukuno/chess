@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Chess } from 'chess.js';
 import { GameState, GameMode, ChessMove, Difficulty, ChessPuzzle } from '@/types/chess';
+import { validatePuzzle } from '@/utils/validatePuzzle';
 
 const STORAGE_KEY = 'chess-game-state';
 
@@ -65,28 +66,61 @@ export const useChessGame = () => {
     try {
       // In puzzle mode, check if the move matches the solution
       if (gameMode === 'puzzle' && gameState.currentPuzzle) {
+        // Ensure we're using the correct game state - create a fresh instance from puzzle FEN
+        const puzzleGame = new Chess(gameState.currentPuzzle.fen);
+        
         const moveUCI = `${move.from}${move.to}${move.promotion || ''}`;
         const solution = gameState.currentPuzzle.solution;
         
-        // Check if move matches solution
-        if (moveUCI === solution || moveUCI === solution.substring(0, 4)) {
-          // Correct move!
-          const result = game.move({
-            from: move.from,
-            to: move.to,
-            promotion: move.promotion
-          });
-          if (result) {
+        // Normalize solution (remove promotion if not specified in move)
+        const solutionBase = solution.substring(0, 4);
+        const moveBase = moveUCI.substring(0, 4);
+        
+        // Check if move matches solution (exact match or base match)
+        if (moveUCI === solution || moveBase === solutionBase) {
+          // Verify the move is actually legal before accepting it
+          try {
+            const result = puzzleGame.move({
+              from: move.from,
+              to: move.to,
+              promotion: move.promotion as any
+            });
+            if (result) {
+              // Update the game state with the new position
+              setGame(puzzleGame);
+              setGameState(prev => ({
+                ...prev,
+                fen: puzzleGame.fen(),
+                status: 'puzzle-solved',
+                puzzleSolved: true,
+                moveHistory: puzzleGame.history(),
+              }));
+              return true;
+            }
+          } catch (moveError) {
+            // Move is not legal even though it matches solution - puzzle might be invalid
+            console.error('Puzzle solution move is not legal:', moveError);
             setGameState(prev => ({
               ...prev,
-              fen: game.fen(),
-              status: 'puzzle-solved',
-              puzzleSolved: true,
-              moveHistory: game.history(),
+              status: 'puzzle-failed',
+              puzzleSolved: false,
             }));
-            return true;
+            return false;
           }
         } else {
+          // Wrong move - check if it's at least legal (for user feedback)
+          try {
+            const testMove = puzzleGame.move({
+              from: move.from,
+              to: move.to,
+              promotion: move.promotion as any
+            });
+            // If it's a legal move but wrong, we don't update the game state
+            // The puzzle game remains in its original state
+          } catch {
+            // Illegal move - user tried an invalid move
+          }
+          
           // Wrong move
           setGameState(prev => ({
             ...prev,
@@ -167,18 +201,35 @@ export const useChessGame = () => {
 
   const startPuzzle = useCallback((puzzle: ChessPuzzle) => {
     setGameMode('puzzle');
-    const puzzleGame = new Chess(puzzle.fen);
-    setGame(puzzleGame);
-    setGameState({
-      fen: puzzle.fen,
-      gameMode: 'puzzle',
-      status: 'playing',
-      currentPlayer: puzzle.fen.split(' ')[1] === 'w' ? 'w' : 'b',
-      moveHistory: [],
-      currentPuzzle: puzzle,
-      puzzleSolved: false,
-    });
-    localStorage.removeItem(STORAGE_KEY);
+    
+    // Validate the puzzle before starting
+    const validation = validatePuzzle(puzzle);
+    
+    if (!validation.valid) {
+      console.error(`Puzzle ${puzzle.id} is invalid: ${validation.error}`);
+      console.error(`FEN: ${puzzle.fen}`);
+      console.error(`Solution: ${puzzle.solution}`);
+      // Still load the puzzle but log the error - user can try it anyway
+    }
+    
+    try {
+      const puzzleGame = new Chess(puzzle.fen);
+      const turn = puzzle.fen.split(' ')[1];
+      
+      setGame(puzzleGame);
+      setGameState({
+        fen: puzzle.fen,
+        gameMode: 'puzzle',
+        status: 'playing',
+        currentPlayer: turn as 'w' | 'b',
+        moveHistory: [],
+        currentPuzzle: puzzle,
+        puzzleSolved: false,
+      });
+      localStorage.removeItem(STORAGE_KEY);
+    } catch (error) {
+      console.error(`Puzzle ${puzzle.id}: Error loading puzzle -`, error);
+    }
   }, []);
 
   const nextPuzzle = useCallback((difficulty?: Difficulty) => {

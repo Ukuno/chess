@@ -11,6 +11,7 @@ import GameLobby from '@/components/GameLobby';
 import AuthButton from '@/components/AuthButton';
 import { getAIMove } from '@/utils/chessAI';
 import { getRandomPuzzle } from '@/data/chessPuzzles';
+import { Chess } from 'chess.js';
 
 export default function Home() {
   const { data: session, status } = useSession();
@@ -81,6 +82,7 @@ export default function Home() {
   const [multiplayerGameId, setMultiplayerGameId] = useState<string | null>(null);
   const [playerColor, setPlayerColor] = useState<'w' | 'b' | null>(null);
   const [opponentLeftMessage, setOpponentLeftMessage] = useState<string | null>(null);
+  const [showAnswer, setShowAnswer] = useState(false);
 
   const handleMultiplayerStart = async (gameId: string, color: 'w' | 'b') => {
     setMultiplayerGameId(gameId);
@@ -413,9 +415,14 @@ export default function Home() {
                 )}
                 {gameState.gameMode === 'puzzle' && gameState.currentPuzzle && (
                   <div className="mt-2">
-                    <p className="text-gray-700 font-semibold">
-                      {gameState.currentPuzzle.description}
-                    </p>
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-gray-700 font-semibold">
+                        {gameState.currentPuzzle.description}
+                      </p>
+                      <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                        Puzzle #{gameState.currentPuzzle.id}
+                      </span>
+                    </div>
                     {gameState.currentPuzzle.hint && gameState.status === 'puzzle-failed' && (
                       <p className="text-sm text-gray-500 mt-1">
                         💡 Hint: {gameState.currentPuzzle.hint}
@@ -447,6 +454,7 @@ export default function Home() {
                           onClick={() => {
                             const puzzle = getRandomPuzzle(gameState.currentPuzzle?.difficulty);
                             startPuzzle(puzzle);
+                            setShowAnswer(false);
                           }}
                           className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded transition-colors"
                         >
@@ -460,11 +468,45 @@ export default function Home() {
                       <strong>❌ Wrong Move!</strong>
                       <br />
                       <span>Try again or select a new puzzle.</span>
+                      {showAnswer && gameState.currentPuzzle && (() => {
+                        // Convert UCI to algebraic notation
+                        const solution = gameState.currentPuzzle.solution;
+                        const from = solution.substring(0, 2);
+                        const to = solution.substring(2, 4);
+                        const promotion = solution.length > 4 ? solution.substring(4) : undefined;
+                        
+                        try {
+                          const tempGame = new Chess(gameState.currentPuzzle.fen);
+                          const move = tempGame.move({
+                            from,
+                            to,
+                            promotion: promotion as any
+                          });
+                          const algebraicNotation = move ? move.san : `${from.toUpperCase()} → ${to.toUpperCase()}`;
+                          
+                          return (
+                            <div className="mt-3 p-3 bg-yellow-50 border border-yellow-300 rounded">
+                              <strong>💡 Answer:</strong> <span className="font-mono font-bold text-lg">{algebraicNotation}</span>
+                              <br />
+                              <span className="text-sm text-gray-600 mt-1 block">{gameState.currentPuzzle.description}</span>
+                            </div>
+                          );
+                        } catch {
+                          return (
+                            <div className="mt-3 p-3 bg-yellow-50 border border-yellow-300 rounded">
+                              <strong>💡 Answer:</strong> <span className="font-mono font-bold text-lg">{from.toUpperCase()} → {to.toUpperCase()}</span>
+                              <br />
+                              <span className="text-sm text-gray-600 mt-1 block">{gameState.currentPuzzle.description}</span>
+                            </div>
+                          );
+                        }
+                      })()}
                       <div className="mt-3 space-x-2">
                         <button
                           onClick={() => {
                             if (gameState.currentPuzzle) {
                               startPuzzle(gameState.currentPuzzle);
+                              setShowAnswer(false);
                             }
                           }}
                           className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded transition-colors"
@@ -473,8 +515,17 @@ export default function Home() {
                         </button>
                         <button
                           onClick={() => {
+                            setShowAnswer(!showAnswer);
+                          }}
+                          className="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded transition-colors"
+                        >
+                          {showAnswer ? 'Hide Answer' : 'Show Answer'}
+                        </button>
+                        <button
+                          onClick={() => {
                             const puzzle = getRandomPuzzle(gameState.currentPuzzle?.difficulty);
                             startPuzzle(puzzle);
+                            setShowAnswer(false);
                           }}
                           className="bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded transition-colors"
                         >
@@ -512,7 +563,7 @@ export default function Home() {
 
         {/* Instructions */}
         <div className="mt-8 bg-white rounded-lg shadow-lg p-6">
-          <h3 className="text-xl font-semibold mb-4">How to Play</h3>
+          <h3 className="text-xl font-semibold text-black mb-4">How to Play</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <h4 className="font-semibold text-gray-800 mb-2">Game Modes</h4>
