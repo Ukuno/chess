@@ -11,8 +11,8 @@ export function validatePuzzle(puzzle: ChessPuzzle): { valid: boolean; error?: s
     
     // Check if it's the correct player's turn
     const turn = puzzle.fen.split(' ')[1];
-    const piece = game.get(from);
-    
+    const piece = game.get(from as any);
+
     if (!piece) {
       return { valid: false, error: `No piece at ${from}` };
     }
