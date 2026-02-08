@@ -43,6 +43,9 @@ export default function GameControls({
     if (gameStatus === 'draw') {
       return 'Draw!';
     }
+    if (gameStatus === 'resigned') {
+      return winner === 'w' ? 'White wins by resignation!' : 'Black wins by resignation!';
+    }
     if (gameMode === 'puzzle') {
       return 'Find the best move!';
     }

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { ChessPuzzle, Difficulty } from '@/types/chess';
-import { getRandomPuzzle, getPuzzlesByDifficulty } from '@/data/chessPuzzles';
+import { getRandomPuzzle, getPuzzlesByDifficulty, getDailyPuzzle } from '@/data/chessPuzzles';
 
 interface PuzzleSelectorProps {
   onPuzzleSelect: (puzzle: ChessPuzzle) => void;
@@ -80,6 +80,13 @@ export default function PuzzleSelector({ onPuzzleSelect, currentDifficulty }: Pu
             </button>
           </div>
         </div>
+
+        <button
+          onClick={() => onPuzzleSelect(getDailyPuzzle())}
+          className="w-full bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-3 px-6 rounded-lg transition-colors"
+        >
+          📅 Daily Puzzle
+        </button>
 
         <button
           onClick={handleRandomPuzzle}

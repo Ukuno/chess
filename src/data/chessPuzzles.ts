@@ -344,3 +344,11 @@ export const getRandomPuzzle = (difficulty?: string): ChessPuzzle => {
     : chessPuzzles;
   return puzzles[Math.floor(Math.random() * puzzles.length)];
 };
+
+/** Returns the same puzzle for the whole calendar day (by date seed) */
+export const getDailyPuzzle = (): ChessPuzzle => {
+  const today = new Date();
+  const seed = today.getFullYear() * 10000 + today.getMonth() * 100 + today.getDate();
+  const idx = seed % chessPuzzles.length;
+  return chessPuzzles[idx];
+};

@@ -1,7 +1,7 @@
 export type GameMode = 'human-vs-human' | 'human-vs-ai' | 'puzzle' | 'multiplayer';
 export type Difficulty = 'easy' | 'medium' | 'hard' | 'grandmaster';
 
-export type GameStatus = 'playing' | 'checkmate' | 'stalemate' | 'draw' | 'puzzle-solved' | 'puzzle-failed';
+export type GameStatus = 'playing' | 'checkmate' | 'stalemate' | 'draw' | 'puzzle-solved' | 'puzzle-failed' | 'resigned';
 
 export interface ChessPuzzle {
   id: number;

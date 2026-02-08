@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 import { useChessGame } from '@/hooks/useChessGame';
@@ -12,6 +12,7 @@ import AuthButton from '@/components/AuthButton';
 import { getAIMove } from '@/utils/chessAI';
 import { getRandomPuzzle } from '@/data/chessPuzzles';
 import { Chess } from 'chess.js';
+import { useSound } from '@/hooks/useSound';
 
 export default function Home() {
   const { data: session, status } = useSession();
@@ -27,6 +28,8 @@ export default function Home() {
     updateMultiplayerGame,
     getLegalMoves,
     isGameOver,
+    undoMove,
+    resign,
   } = useChessGame();
 
   // AI move logic for human vs AI mode
@@ -50,7 +53,10 @@ export default function Home() {
 
   const handleMove = async (move: { from: string; to: string; promotion?: string }) => {
     const result = makeMove(move);
-    
+    if (result) {
+      playSound(gameState.gameMode === 'puzzle' ? 'gameover' : 'move');
+    }
+
     // If multiplayer mode, sync move to server
     if (gameState.gameMode === 'multiplayer' && multiplayerGameId && result) {
       try {
@@ -83,6 +89,47 @@ export default function Home() {
   const [playerColor, setPlayerColor] = useState<'w' | 'b' | null>(null);
   const [opponentLeftMessage, setOpponentLeftMessage] = useState<string | null>(null);
   const [showAnswer, setShowAnswer] = useState(false);
+  const [flipBoard, setFlipBoard] = useState(false);
+  const lastReportedGameRef = useRef<string | null>(null);
+  const lastReportedPuzzleRef = useRef<string | null>(null);
+  const { play: playSound, muted, setMute } = useSound();
+
+  // Report game result to stats (once per game)
+  useEffect(() => {
+    if (status !== 'authenticated') return;
+    const { status: gameStatus, gameMode, winner, fen } = gameState;
+    if (gameMode !== 'human-vs-ai' && gameMode !== 'multiplayer') return;
+    if (gameStatus !== 'checkmate' && gameStatus !== 'stalemate' && gameStatus !== 'draw' && gameStatus !== 'resigned') return;
+    const key = `${fen}-${gameStatus}`;
+    if (lastReportedGameRef.current === key) return;
+    lastReportedGameRef.current = key;
+    const result = gameStatus === 'draw' ? 'draw' : gameStatus === 'resigned'
+      ? 'loss'
+      : gameMode === 'human-vs-ai'
+        ? (winner === 'w' ? 'win' : 'loss')
+        : (winner === playerColor ? 'win' : winner === 'draw' ? 'draw' : 'loss');
+    fetch('/api/stats/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'game_result', result }),
+    }).catch(console.error);
+    playSound('gameover');
+  }, [gameState.status, gameState.gameMode, gameState.winner, gameState.fen, status, playerColor, playSound]);
+
+  // Report puzzle attempt to stats (once per puzzle result)
+  useEffect(() => {
+    if (status !== 'authenticated') return;
+    const { status: gameStatus, currentPuzzle } = gameState;
+    if (gameStatus !== 'puzzle-solved' && gameStatus !== 'puzzle-failed') return;
+    const key = currentPuzzle ? `${currentPuzzle.id}-${gameStatus}` : gameStatus;
+    if (lastReportedPuzzleRef.current === key) return;
+    lastReportedPuzzleRef.current = key;
+    fetch('/api/stats/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'puzzle_attempt', solved: gameStatus === 'puzzle-solved' }),
+    }).catch(console.error);
+  }, [gameState.status, gameState.currentPuzzle, status]);
 
   const handleMultiplayerStart = async (gameId: string, color: 'w' | 'b') => {
     setMultiplayerGameId(gameId);
@@ -273,7 +320,7 @@ export default function Home() {
         <div className="container mx-auto px-4 py-8">
           {/* Header */}
           <div className="text-center mb-8">
-            <div className="flex justify-between items-center mb-4">
+            <div className="flex justify-evenly items-center mb-4">
               <div className="flex-1"></div>
               <div className="flex-1 text-center">
                 <h1 className="text-4xl font-bold text-white mb-2">
@@ -343,10 +390,10 @@ export default function Home() {
     <div className="min-h-screen bg-gradient-to-br from-blue-900 via-purple-900 to-indigo-900">
       <div className="container mx-auto px-4 py-8">
         {/* Header */}
-        <div className="text-center mb-8">
-          <div className="flex justify-between items-center mb-4">
-            <div className="flex-1"></div>
-            <div className="flex-1 text-center">
+        <div className=" mb-8">
+          <div className="flex justify-evenly items-center mb-4">
+            {/* <div className="flex-1"></div> */}
+            <div className="flex-1">
               <h1 className="text-4xl font-bold text-white mb-2">
                 Chess Game
               </h1>
@@ -354,7 +401,17 @@ export default function Home() {
                 Play against AI or another human player
               </p>
             </div>
-            <div className="flex-1 flex justify-end">
+            <div className="flex-1 flex justify-end items-center gap-4">
+              <button
+                type="button"
+                onClick={() => setMute(!muted)}
+                className="text-white hover:text-blue-200 text-sm"
+                title={muted ? 'Unmute' : 'Mute'}
+              >
+                {muted ? '🔇 Sound off' : '🔊 Sound on'}
+              </button>
+              <Link href="/profile" className="text-white hover:text-blue-200 text-sm">Profile</Link>
+              <Link href="/leaderboard" className="text-white hover:text-blue-200 text-sm">Leaderboard</Link>
               <AuthButton />
             </div>
           </div>
@@ -432,14 +489,58 @@ export default function Home() {
                 )}
               </div>
               
-              <SimpleChessBoard
-                position={gameState.fen}
-                onMove={handleMove}
-                isPlayerTurn={isPlayerTurn}
-                gameMode={gameState.gameMode}
-                currentPlayer={gameState.currentPlayer}
-                getLegalMoves={getLegalMoves}
-              />
+              <div className="flex gap-4 flex-wrap">
+                <div className="flex-1 min-w-0">
+                  <div className="flex justify-between items-center mb-2">
+                    <div className="flex gap-2 flex-wrap">
+                      {(gameState.gameMode === 'human-vs-human' || gameState.gameMode === 'human-vs-ai') && gameState.status === 'playing' && game.history().length > 0 && (
+                        <button
+                          type="button"
+                          onClick={undoMove}
+                          className="px-3 py-1.5 bg-gray-200 hover:bg-gray-300 rounded text-gray-700 text-sm font-medium"
+                        >
+                          Undo
+                        </button>
+                      )}
+                      {(gameState.gameMode === 'human-vs-human' || gameState.gameMode === 'human-vs-ai') && gameState.status === 'playing' && (
+                        <button
+                          type="button"
+                          onClick={resign}
+                          className="px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 rounded text-sm font-medium"
+                        >
+                          Resign
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setFlipBoard((b) => !b)}
+                        className="px-3 py-1.5 bg-yellow-200 hover:bg-yellow-300 rounded text-gray-700 text-sm font-medium"
+                      >
+                        Flip board
+                      </button>
+                    </div>
+                  </div>
+                  <SimpleChessBoard
+                    position={gameState.fen}
+                    onMove={handleMove}
+                    isPlayerTurn={isPlayerTurn}
+                    gameMode={gameState.gameMode}
+                    currentPlayer={gameState.currentPlayer}
+                    getLegalMoves={getLegalMoves}
+                    orientation={flipBoard ? 'black' : 'white'}
+                  />
+                </div>
+                {gameState.moveHistory && gameState.moveHistory.length > 0 && (
+                  <div className="w-48 max-h-64 overflow-y-auto bg-gray-50 rounded p-2 text-sm">
+                    <p className="font-semibold text-gray-700 mb-1">Moves</p>
+                    <div className="flex flex-wrap gap-x-2 gap-y-0.5">
+                      {gameState.moveHistory.map((move, i) => (
+                        <span key={i} className="text-gray-600">{move}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
 
               {/* Puzzle Solved / Failed Message */}
               {gameState.gameMode === 'puzzle' && (
@@ -539,7 +640,7 @@ export default function Home() {
 
               {/* Game Over Message */}
               {isGameOver && gameState.gameMode !== 'puzzle' && (
-                <div className="mt-6 text-center">
+                <div className="mt-6 text-center space-y-2">
                   <div className="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded">
                     <strong>Game Over!</strong>
                     <br />
@@ -554,7 +655,27 @@ export default function Home() {
                     {gameState.status === 'draw' && (
                       <span>The game is a draw!</span>
                     )}
+                    {gameState.status === 'resigned' && (
+                      <span>
+                        {gameState.winner === 'w' ? 'White' : 'Black'} wins by resignation.
+                      </span>
+                    )}
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      try {
+                        const pgn = game.pgn();
+                        navigator.clipboard.writeText(pgn);
+                        alert('PGN copied to clipboard!');
+                      } catch {
+                        alert('Could not copy PGN');
+                      }
+                    }}
+                    className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded text-gray-700 text-sm font-medium"
+                  >
+                    Copy PGN
+                  </button>
                 </div>
               )}
             </div>

@@ -10,6 +10,7 @@ interface SimpleChessBoardProps {
   gameMode: 'human-vs-human' | 'human-vs-ai' | 'puzzle' | 'multiplayer';
   currentPlayer: 'w' | 'b';
   getLegalMoves?: (square: string) => any[];
+  orientation?: 'white' | 'black';
 }
 
 export default function SimpleChessBoard({ 
@@ -18,10 +19,12 @@ export default function SimpleChessBoard({
   isPlayerTurn, 
   gameMode, 
   currentPlayer,
-  getLegalMoves
+  getLegalMoves,
+  orientation = 'white',
 }: SimpleChessBoardProps) {
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
   const [validMoves, setValidMoves] = useState<string[]>([]);
+  const flipped = orientation === 'black';
 
   // Parse FEN position to get piece positions
   const parseFEN = (fen: string) => {
@@ -81,7 +84,9 @@ export default function SimpleChessBoard({
   const getSquareName = (row: number, col: number) => {
     const files = 'abcdefgh';
     const ranks = '87654321';
-    return files[col] + ranks[row];
+    const r = flipped ? 7 - row : row;
+    const c = flipped ? 7 - col : col;
+    return files[c] + ranks[r];
   };
 
   const handleSquareClick = useCallback((row: number, col: number) => {
@@ -186,28 +191,33 @@ export default function SimpleChessBoard({
           
           {/* Chess board */}
           <div className="grid grid-cols-8">
-            {board.map((row, rowIndex) =>
-              row.map((piece, colIndex) => (
+            {(flipped ? [...board].reverse().map((r) => [...r].reverse()) : board).map((row, rowIndex) =>
+              row.map((piece, colIndex) => {
+                const actualRow = flipped ? 7 - rowIndex : rowIndex;
+                const actualCol = flipped ? 7 - colIndex : colIndex;
+                const actualPiece = board[actualRow][actualCol];
+                return (
                 <div
                   key={`${rowIndex}-${colIndex}`}
                   className={`
                     aspect-square flex items-center justify-center text-4xl cursor-pointer relative
-                    ${getSquareColor(rowIndex, colIndex)}
-                    ${isSelected(rowIndex, colIndex) ? 'border-2 border-orange-500' : isValidMoveWithEnemy(rowIndex, colIndex) ? 'border-2 border-red-500/50' : isValidMove(rowIndex, colIndex) ? 'border-2 border-green-500/50' : 'border-2 border-transparent'}
+                    ${getSquareColor(actualRow, actualCol)}
+                    ${isSelected(actualRow, actualCol) ? 'border-2 border-orange-500' : isValidMoveWithEnemy(actualRow, actualCol) ? 'border-2 border-red-500/50' : isValidMove(actualRow, actualCol) ? 'border-2 border-green-500/50' : 'border-2 border-transparent'}
                     hover:bg-opacity-80
                   `}
-                  onClick={() => handleSquareClick(rowIndex, colIndex)}
+                  onClick={() => handleSquareClick(actualRow, actualCol)}
                 >
-                  {isValidMove(rowIndex, colIndex) && (
+                  {isValidMove(actualRow, actualCol) && (
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                      <div className={`w-2 h-2 rounded-full ${isValidMoveWithEnemy(rowIndex, colIndex) ? 'bg-red-500/50' : 'bg-green-500/50'}`}></div>
+                      <div className={`w-2 h-2 rounded-full ${isValidMoveWithEnemy(actualRow, actualCol) ? 'bg-red-500/50' : 'bg-green-500/50'}`}></div>
                     </div>
                   )}
-                  <span className={`${getPieceColor(piece)} font-bold drop-shadow-lg z-10`}>
-                    {getPieceSymbol(piece)}
+                  <span className={`${getPieceColor(actualPiece)} font-bold drop-shadow-lg z-10`}>
+                    {getPieceSymbol(actualPiece)}
                   </span>
                 </div>
-              ))
+              );
+              })
             )}
           </div>
           

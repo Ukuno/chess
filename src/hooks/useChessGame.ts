@@ -246,6 +246,36 @@ export const useChessGame = () => {
     return game.moves({ square: square as any, verbose: true });
   }, [game]);
 
+  const undoMove = useCallback(() => {
+    if (gameMode === 'puzzle') return;
+    if (game.history().length === 0) return;
+    if (gameMode === 'human-vs-ai') {
+      game.undo();
+      if (game.history().length > 0) game.undo();
+    } else {
+      game.undo();
+    }
+    setGame(new Chess(game.fen()));
+    setGameState(prev => ({
+      ...prev,
+      fen: game.fen(),
+      currentPlayer: game.turn(),
+      moveHistory: game.history(),
+      status: 'playing',
+      winner: undefined,
+    }));
+  }, [game, gameMode]);
+
+  const resign = useCallback(() => {
+    if (gameMode === 'puzzle' || gameMode === 'multiplayer') return;
+    const winner = game.turn() === 'w' ? 'b' : 'w';
+    setGameState(prev => ({
+      ...prev,
+      status: 'resigned',
+      winner,
+    }));
+  }, [game, gameMode]);
+
   const updateMultiplayerGame = useCallback((fen: string, moveHistory: string[], status: string, currentPlayer: 'w' | 'b', winner?: 'w' | 'b' | 'draw', gameId?: string, playerColor?: 'w' | 'b') => {
     const chess = new Chess(fen);
     setGame(chess);
@@ -282,5 +312,7 @@ export const useChessGame = () => {
     updateMultiplayerGame,
     getLegalMoves,
     isGameOver,
+    undoMove,
+    resign,
   };
 };
